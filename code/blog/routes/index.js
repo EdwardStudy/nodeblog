@@ -5,12 +5,15 @@
 var crypto = require('crypto'),
 	User = require('../models/user.js'),
 	Post = require('../models/post.js'),
+	Comment = require('../models/comment.js');
 	fs = require('fs');
 	
 module.exports = function(app){
 	//主页
 	app.get('/', function(req, res){
-		Post.getAll(null, function(err, posts){
+		//判断是否为第一页
+		var page = req.query.p ? parseInt(req.query.p) : 1;
+		Post.getTen(null, page, function(err, posts, total){
 			if(err){
 				posts = [];
 			}
@@ -20,7 +23,10 @@ module.exports = function(app){
 				user: req.session.user,
 				posts: posts,
 				success: req.flash('success').toString(),
-				error: req.flash('error').toString()
+				error: req.flash('error').toString(),
+				page: page,
+				isFirstPage: (page - 1) == 0,
+				isLastPage: ((page - 1) * 10 + posts.length) == total
 			});
 		});
 	});
@@ -122,8 +128,12 @@ module.exports = function(app){
 	});
 	app.post('/post', checkLogin);
 	app.post('/post', function(req, res){
+		console.log(req.body.tag1);
+		console.log(req.body.tag2);
+		console.log(req.body.tag3);
 		var currentUser = req.session.user,
-			post = new Post(currentUser.name, req.body.title, req.body.post);
+			tags = [req.body.tag1, req.body.tag2, req.body.tag3],
+			post = new Post(currentUser.name, req.body.title, tags, req.body.post);
 		post.save(function(err){
 			if(err){
 				req.flash('error', err);
@@ -170,8 +180,26 @@ module.exports = function(app){
 		res.redirect('/upload');
 	});
 
+	//存档界面
+	app.get('/archive', function(req, res){
+		Post.getArchive(function(err, posts){
+			if(err){
+				req.flash('error', err);
+				return res.redirect('/');
+			}
+			res.render('archive', {
+				title: '存档',
+				posts: posts,
+				user: req.session.user,
+				success: req.flash('success').toString(),
+				error: req.flash('error').toString()
+			});
+		});
+	});
+
 	//用户页面
 	app.get('/u/:name', function(req, res){
+		var page = req.query.p? parseInt(req.query.p) : 1;
 		//检查用户是否存在
 		User.get(req.params.name, function(err, user){
 			if(!user){
@@ -180,7 +208,7 @@ module.exports = function(app){
 			}
 
 			//查询并返回该用户的所有文章
-			Post.getAll(user.name, function(err, posts){
+			Post.getTen(user.name, page, function(err, posts, total){
 				if(err){
 					req.flash('error', err);
 					return res.redirect('/');
@@ -190,7 +218,10 @@ module.exports = function(app){
 					posts: posts,
 					user: req.session.user,
 					success: req.flash('success').toString(),
-					error: req.flash('error').toString()
+					error: req.flash('error').toString(),
+					page: page,
+					isFirstPage: (page - 1) == 0,
+					isLastPage: ((page - 1) * 10 + posts.length) == total
 				});
 			});
 		});
@@ -210,6 +241,29 @@ module.exports = function(app){
 				success: req.flash('success').toString(),
 				error: req.flash('error').toString()
 			});
+		});
+	});
+
+	//文章留言
+	app.post('/u/:name/:day/:title', function(req, res){
+		var date = new Date(),
+			time = date.getFullYear() + "-" + (date.getMonth() + 1) + "-" + date.getDate() + " " + 
+             date.getHours() + ":" + (date.getMinutes() < 10 ? '0' + date.getMinutes() : date.getMinutes());
+		var comment = {
+			name: req.body.name,
+			email: req.body.email,
+			website: req.body.website,
+			time: time,
+			content: req.body.content
+		};
+		var newComment = new Comment(req.params.name, req.params.day, req.params.title, comment);
+		newComment.save(function(err){
+			if(err){
+				req.flash('error', err);
+				return res.redirect('back');
+			}
+			req.flash('success', '留言成功！');
+			res.redirect('back');
 		});
 	});
 
@@ -258,6 +312,39 @@ module.exports = function(app){
 			}
 			req.flash('success', '删除成功！');
 			res.redirect('/');
+		});
+	});
+
+	//标签页
+	app.get('/tags', function(req, res){
+		Post.getTags(function(err, posts){
+			if(err){
+				req.flash('error', err);
+				return res.redirect('/');
+			}
+			res.render('tags', {
+				title: '标签',
+				posts: posts,
+				user: req.session.user,
+				success: req.flash('success').toString(),
+				error: req.flash('error').toString()
+			});
+		});
+	});
+	//包含标签的文章
+	app.get('/tags/:tag', function(req, res){
+		Post.getTag(req.params.tag, function(err, posts){
+			if(err){
+				req.flash('error', err);
+				return res.redirect('/');
+			}
+			res.render('tag', {
+				title: "TAG:" + req.params.tag,
+				posts: posts,
+				user: req.session.user,
+				success: req.flash('success').toString(),
+				error: req.flash('error').toString()
+			});
 		});
 	});
 };
